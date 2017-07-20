@@ -1,25 +1,146 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: 'Peer graded assignment: Course project 1'
+output: html_document
 ---
 
 
-## Loading and preprocessing the data
+1. Set working directory, read data and load libraries used.
+
+```{r}
+setwd("C:/Users/Rafael/Desktop/Rafael Balde/Coursera Data Science")
+
+activity <- read.csv("activity.csv", header = T, sep = ",")
+
+library(dplyr)
+library(ggplot2)
+```
+
+
+2. Aggregate by date, sum steps and plot a histogram of the daily steps.
+
+```{r}
+daily.steps <- activity %>% group_by(date) %>% summarise(steps = sum(steps, na.rm =T))
+
+ggplot(daily.steps, aes(x = steps)) + geom_histogram(binwidth = 1200 ) 
+```
 
 
 
-## What is mean total number of steps taken per day?
+3. Compute mean and median daily steps.
+
+```{r}
+summary(daily.steps$steps)
+```
 
 
 
-## What is the average daily activity pattern?
+4. Aggregate by interval, and plot time series of the average number of steps for each 5 minute interval.
+
+```{r}
+intra.day.steps <- activity %>% group_by(interval) %>% summarise(steps = mean(steps, na.rm = T))
+                                                                    
+ggplot(intra.day.steps, aes(interval, steps)) + geom_line() 
+```
+
+5. Find the interval with the maximum average number of steps. 
+
+```{r}
+which.max(intra.day.steps$steps)
+```
+
+The result is row 104, which corresponds to the minute 835.
 
 
 
-## Imputing missing values
+6. Strategy for imputing missing values.
+
+```{r}
+#total number of NA values
+sum(is.na(activity$steps))
+
+#compute summary statistics to see which is the best substitute for NAs
+interval.stats <- activity %>% 
+  group_by(interval) %>%
+  summarise(Steps.min = min(steps, na.rm = T), 
+  Steps.max = max(steps, na.rm = T),
+  steps.mean = mean(steps, na.rm = T),
+  steps.median = median(steps, na.rm = T),
+  steps.sd = sd(steps, na.rm = T),
+  steps.IQR = IQR(steps, na.rm = T))
+
+```
+
+The median for most intervals is 0. Therefore the mean is the best guess for the NA values.
+
+
+```{r}
+#create a lookup table for the average number of steps per interval
+NA.lookup <- activity %>%
+  group_by(interval) %>%
+  summarise(steps.guess = mean(steps, na.rm = T))
+
+#change the NA values for the interval mean
+activity.imputed <- activity %>%
+  left_join(NA.lookup, by = "interval") %>%
+  mutate(steps = ifelse(is.na(steps), steps.guess, steps)) %>%
+  select(-steps.guess)
+
+```
 
 
 
-## Are there differences in activity patterns between weekdays and weekends?
+
+7. Aggregate the values and plot new histogram.
+
+```{r}
+daily.steps.2 <- activity.imputed %>% group_by(date) %>% summarise(steps = sum(steps))
+
+ggplot(daily.steps.2, aes(x = steps)) + geom_histogram(binwidth = 1200 ) 
+
+```
+
+The result of the imputation is a decrease in the number of days which had 0 average steps. As a consequence, most of the counts went to a number of steps close to the mean...
+
+
+Which now is.
+
+```{r}
+summary(daily.steps.2$steps)
+```
+
+
+
+8. For the weekday/weekend analysis, we will first add a variable for which day of the week the observation is from.
+
+```{r}
+activity.imputed$date <- as.Date(activity.imputed$date)
+
+activity.imputed <- activity.imputed %>%
+  mutate(day = weekdays(activity.imputed$date))
+```
+
+
+Using stringr, we will look for a portuguese word that is only contained in weekdays. Then, we will coerce it to a factor, and aggregate by the intervals.
+
+```{r}
+library(stringr)
+
+activity.imputed$day <- ifelse(str_detect(activity.imputed$day, "feira"), "weekday", "weekend")
+
+activity.imputed$day <- as.factor(activity.imputed$day)
+
+intra.day.2 <- activity.imputed %>% group_by(interval) %>% summarise(steps = mean(steps))
+
+```
+
+
+Now we plot the time series for weekdays and weekends.
+
+```{r}
+ggplot(activity.imputed, aes(interval, steps)) + geom_line() + facet_grid(day~.)
+```
+
+The results show that the subject is more active earlier in the day during the week, and more active later in the day on weekends. It seems that he or she likes to party.
+
+
+
